@@ -1,0 +1,17 @@
+{
+  "name": "browseragent",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "GPLv2",
+  "devDependencies": {
+    "@types/firefox-webext-browser": "^111.0.2",
+    "@types/web": "^0.0.115",
+    "rollup": "3.29.2",
+    "typescript": "5.2.2"
+  }
+}

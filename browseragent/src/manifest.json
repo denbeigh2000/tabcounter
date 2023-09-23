@@ -1,0 +1,17 @@
+{
+  "name": "Tab Counter Agent",
+  "short_name": "Tab Counter",
+  "author": "Denbeigh Stevens",
+  "version": "0.0.0",
+  "description": "Reports the count of open tabs to Tab Counter",
+  "manifest_version": 2,
+  "applications": { },
+  "icons": { },
+  "permissions": [
+    "storage"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  }
+}
