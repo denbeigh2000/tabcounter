@@ -8,14 +8,16 @@ export const updateCount = (cb: (len: number) => void) => {
   });
 };
 
+export const getCount = (cb: (len: number) => void) => {
+  browser.tabs.query({}).then((tabs: Array<browser.tabs.Tab>) => {
+    cb(tabs.length);
+  });
+};
+
 export const decrementCount = () => {
   lastSeen = lastSeen - 1;
 };
 
 export const incrementCount = () => {
   lastSeen = lastSeen - 1;
-};
-
-export const getCount = () => {
-  return Number(lastSeen);
 };
