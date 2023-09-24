@@ -8,9 +8,13 @@
       url = "github:numtide/flake-utils";
       inputs.systems.follows = "systems";
     };
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, systems }:
+  outputs = { self, nixpkgs, flake-utils, systems, fenix }:
     let
       allSystems = import systems;
     in
@@ -19,9 +23,15 @@
       let
         pkgs = import nixpkgs {
           inherit system;
+          overlays = [ fenix.overlays.default ];
         };
 
+        inherit (pkgs.stdenvNoCC.hostPlatform) isDarwin isLinux;
+
         browseragent = pkgs.callPackage ./browseragent { };
+
+        darwinPkgs = if isDarwin then [ pkgs.libiconv pkgs.darwin.Security ] else [ ];
+        linuxPkgs = if isLinux then [ ] else [ ];  # TODO
       in
       {
         packages = rec {
@@ -38,7 +48,18 @@
               nodePackages.yarn
               nodePackages.typescript
               nodePackages.rollup
-            ];
+
+              (pkgs.fenix.complete.withComponents
+                [
+                  "cargo"
+                  "clippy"
+                  "rustfmt"
+                  "rustc"
+                  "rust-src"
+                ])
+              rust-analyzer-nightly
+
+            ] ++ darwinPkgs ++ linuxPkgs;
           };
         };
       });
