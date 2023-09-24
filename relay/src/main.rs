@@ -3,32 +3,35 @@ use std::process;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use clap::Parser;
-use discord_sdk::activity::{Activity, ActivityArgs, ActivityBuilder, ActivityKind};
-use discord_sdk::{Discord, DiscordHandler, DiscordMsg, Event, Subscriptions};
+use discord_sdk::activity::{Activity, ActivityArgs, ActivityKind};
+use discord_sdk::{Discord, Subscriptions};
 use serde::Deserialize;
-use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::net::TcpSocket;
+use tokio::sync::watch::error::RecvError;
 use tokio_stream::StreamExt;
-use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
-
-// use discord_sdk::
 
 #[derive(thiserror::Error, Debug)]
 enum MainError {
     #[error("{0}")]
     ParsingCliParams(#[from] clap::Error),
+    #[error("error creating TCP socket: {0}")]
+    CreatingTcpSocket(std::io::Error),
+    #[error("error binding TCP socket: {0}")]
+    BindingSocket(std::io::Error),
+    #[error("error listening for connections: {0}")]
+    ListeningForConnections(std::io::Error),
+    #[error("error accepting connection: {0}")]
+    AcceptingConnections(std::io::Error),
+    #[error("error making discord client: {0}")]
+    MakingClient(#[from] MakingClientError),
 }
 
 #[derive(clap::Parser)]
 pub struct CliParams {
     #[clap(env = "TAB_COUNTER_RELAY_APP_ID")]
     app_id: i64,
-
-    // #[clap(env = "TAB_COUNTER_RELAY_APP_SECRET")]
-    // app_secret: String,
 
     // #[clap(env = "TAB_COUNTER_RELAY_PERSONAL_SECRET")]
     // personal_secret: Option<String>,
@@ -80,7 +83,15 @@ struct Client {
 //     }
 // }
 
-async fn make_discord_client(params: &CliParams) -> Client {
+#[derive(thiserror::Error, Debug)]
+enum MakingClientError {
+    #[error("not able to wait for update: {0}")]
+    UserDidntUpdate(#[from] RecvError),
+    #[error("failed to connect to discord")]
+    DiscordConnectFailure,
+}
+
+async fn make_discord_client(params: &CliParams) -> Result<Client, MakingClientError> {
     let mut subs = Subscriptions::empty();
     subs.insert(Subscriptions::ACTIVITY);
 
@@ -100,26 +111,27 @@ async fn make_discord_client(params: &CliParams) -> Client {
 
     eprintln!("made initial user: {uid:?}");
 
-    user.0.changed().await.unwrap();
+    user.0.changed().await?;
 
     eprintln!("changed user");
 
     let user = match &*user.0.borrow() {
         discord_sdk::wheel::UserState::Connected(user) => user.clone(),
         discord_sdk::wheel::UserState::Disconnected(err) => {
-            panic!("failed to connect to Discord: {}", err)
+            // NOTE: it's tricky to get an owned copy of this error
+            // (doesn't implement Copy or Clone)
+            eprintln!("error from discord_sdk: {err}");
+            return Err(MakingClientError::DiscordConnectFailure);
         }
     };
 
     eprintln!("got new user");
 
-    let client = Client {
+    Ok(Client {
         discord,
         wheel,
         user,
-    };
-
-    client
+    })
 }
 
 async fn handle_connection(handler: State, client: Arc<Client>, socket: tokio::net::TcpStream) {
@@ -135,16 +147,26 @@ pub enum AgentMessage {
     SetTabCount { count: u32 },
 }
 
+#[derive(thiserror::Error, Debug)]
+enum ConnectionHandlingError {
+    #[error("error accepting websocket connection: {0}")]
+    AcceptingConnection(#[from] tokio_tungstenite::tungstenite::Error),
+    #[error("error persing message: {0}")]
+    ParsingMessage(#[from] serde_json::Error),
+    #[error("error sending Discord activity update: {0}")]
+    SendingActivityUpdate(#[from] discord_sdk::Error),
+}
+
 async fn try_handle_connection(
     handler: State,
     client: Arc<Client>,
     socket: tokio::net::TcpStream,
-) -> Result<(), std::convert::Infallible> {
-    let mut ws = tokio_tungstenite::accept_async(socket).await.unwrap();
+) -> Result<(), ConnectionHandlingError> {
+    let mut ws = tokio_tungstenite::accept_async(socket).await?;
     while let Some(message) = ws.next().await {
         let message: AgentMessage = match message {
-            Ok(Message::Text(msg)) => serde_json::from_str(&msg).unwrap(),
-            Ok(Message::Binary(msg)) => serde_json::from_slice(&msg).unwrap(),
+            Ok(Message::Text(msg)) => serde_json::from_str(&msg)?,
+            Ok(Message::Binary(msg)) => serde_json::from_slice(&msg)?,
             Err(e) => {
                 eprintln!("Error from websocket: {e}");
                 eprintln!("closing");
@@ -168,7 +190,7 @@ async fn try_handle_connection(
                 let mut args = ActivityArgs::default();
                 args.activity = Some(activity);
                 eprintln!("sending update...");
-                client.discord.update_activity(args).await.unwrap();
+                client.discord.update_activity(args).await?;
                 eprintln!("activity updated");
             }
         }
@@ -183,24 +205,28 @@ async fn real_main() -> Result<(), MainError> {
         .compact()
         .with_max_level(tracing::Level::TRACE)
         .init();
-    // tracing_log::env_logger::init();
 
     let args = CliParams::try_parse()?;
 
     let handler = State::default();
 
-    let ip_addr: Ipv4Addr = "127.0.0.1".parse().unwrap();
+    let ip_addr: Ipv4Addr = "127.0.0.1".parse().expect("127.0.0.1 is a valid IPV4");
     let sock_addr = SocketAddr::V4(SocketAddrV4::new(ip_addr, args.port));
-    let socket = TcpSocket::new_v4().unwrap();
-    socket.bind(sock_addr).unwrap();
-    let listener = socket.listen(3).unwrap();
+    let socket = TcpSocket::new_v4().map_err(MainError::CreatingTcpSocket)?;
+    socket.bind(sock_addr).map_err(MainError::BindingSocket)?;
+    let listener = socket
+        .listen(3)
+        .map_err(MainError::ListeningForConnections)?;
     eprintln!("made listener");
-    let client = Arc::new(make_discord_client(&args).await);
+    let client = Arc::new(make_discord_client(&args).await?);
     eprintln!("made client");
 
     loop {
         eprintln!("waiting for connections");
-        let (conn, _) = listener.accept().await.unwrap();
+        let (conn, _) = listener
+            .accept()
+            .await
+            .map_err(MainError::AcceptingConnections)?;
         let client = Arc::clone(&client);
         let handler = handler.clone();
         tokio::spawn(async move {
