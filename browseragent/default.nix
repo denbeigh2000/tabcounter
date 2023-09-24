@@ -30,12 +30,16 @@ rec {
 
     ls -l
 
-    ${deps}/node_modules/.bin/tsc --project $PWD --outDir $out
+    NODE_PATH="${deps}/node_modules" ./node_modules/.bin/rollup \
+    --config ${./rollup.config.mjs} \
+    --bundleConfigAsCjs \
+    --file $out \
+    ./src/background.ts
   '';
 
   builtDirectory = runCommand "browseragent" { } ''
     mkdir $out
     cp ${./src/manifest.json} $out/manifest.json
-    cp ${compiledJs}/background.js $out/background.js
+    cp ${compiledJs} $out/background.js
   '';
 }
