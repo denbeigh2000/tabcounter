@@ -1,4 +1,4 @@
-import { sendCount } from "./socket";
+import { reconnectIfNecessary, sendCount } from "./socket";
 import { deepmerge } from "deepmerge-ts";
 
 interface PrivateState {
@@ -16,7 +16,10 @@ const defaultPrefs = {
   secret: "",
 };
 
-let privateState: PrivateState;
+let privateState: PrivateState = {
+  state: defaultState,
+  prefs: defaultPrefs,
+};
 
 export interface Preferences {
   port: number,
@@ -40,19 +43,14 @@ export interface RequestPrefsMessage extends BaseMessage {
 
 export interface RequestStateMessage extends BaseMessage {
   type: "requestState",
+  data: null,
 }
 
-export interface SetSecretMessage extends BaseMessage {
-  type: "setSecret",
+export interface SetPrefsMessage extends BaseMessage {
+  type: "setPrefs",
   data: {
-    secret: string
-  }
-}
-
-export interface SetPortMessage extends BaseMessage {
-  type: "setPort",
-  data: {
-    port: number,
+    secret: string,
+    port: number
   }
 }
 
@@ -86,8 +84,7 @@ export interface SocketClosedMessage extends BaseMessage {
 export type Message =
   RequestPrefsMessage
   | RequestStateMessage
-  | SetSecretMessage
-  | SetPortMessage
+  | SetPrefsMessage
   | StateUpdatedMessage
   | PrefsUpdatedMessage
   | TabCountChangeMessage
@@ -111,7 +108,9 @@ export function setSocketClosed() {
 }
 
 export async function initHandlers() {
+  console.debug("fetching preferences");
   const savedPrefs = await browser.storage.local.get("prefs") as Partial<Preferences>;
+  console.debug("preferences:", savedPrefs);
   const initPrefs = savedPrefs ? deepmerge({}, defaultPrefs, savedPrefs) : { ...defaultPrefs };
   setState(defaultState);
   setPrefs(initPrefs);
@@ -125,11 +124,8 @@ export async function initHandlers() {
       case "requestState":
         setTimeout(() => sendResponse(browser.storage.local.get("state")));
         return true;
-      case "setPort":
-        setPort(message.data.port);
-        break;
-      case "setSecret":
-        setSecret(message.data.secret);
+      case "setPrefs":
+        setPrefs(message.data);
         break;
       default:
         console.warn(`unhandled message: ${message}`)
@@ -139,30 +135,38 @@ export async function initHandlers() {
 }
 
 function setState(update: Partial<State>) {
-  const state = deepmerge({}, privateState.state, update);
-  privateState = { state, ...privateState };
+  const state = deepmerge({}, privateState.state, update) as State;
+  privateState.state = state;
   browser.runtime.sendMessage({
     type: "stateUpdated",
     data: { ...state },
-  });
+  })
+    .catch(e => console.warn(`sending message failed: ${e}`));
 }
 
 function setPrefs(update: Partial<Preferences>) {
-  const prefs = deepmerge({}, privateState.prefs, update);
-  privateState = { prefs, ...privateState };
+  const prefs = deepmerge({}, privateState.prefs, update) as Preferences;
+  privateState.prefs = prefs;
+  console.debug("set privateState:", privateState);
   browser.runtime.sendMessage({
     type: "prefsUpdated",
     data: { ...prefs },
-  });
+  })
+    .catch(e => console.warn(`sending message failed: ${e}`));
   browser.storage.local.set({ prefs });
+  console.debug("kicked off browser storage write");
+
+  reconnectIfNecessary(prefs);
 }
 
-export function decrementCount() {
-  setTabCount(privateState.state.openTabs - 1);
+export const decrementCount = () => {
+  const state = getState();
+  setTabCount(state.openTabs - 1);
 }
 
-export function incrementCount() {
-  setTabCount(privateState.state.openTabs - 1);
+export const incrementCount = () => {
+  const state = getState();
+  setTabCount(state.openTabs + 1);
 }
 
 export function setTabCount(count: number) {
