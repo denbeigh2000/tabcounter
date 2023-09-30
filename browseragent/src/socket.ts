@@ -1,4 +1,4 @@
-import { Message, Preferences, sendMessage } from "./events";
+import { Message, getPrefs, setSocketClosed, setSocketOpen } from "./events";
 import { getCount } from "./lib";
 
 let retrierWorking = true;
@@ -74,40 +74,37 @@ const restartSocket = async () => {
 
 export const initSocketHandler = async () => {
   socketPending = true;
-  const prefs = await browser.runtime.sendMessage({ type: "requestPrefs", data: null }) as Preferences;
+  const prefs = getPrefs();
   const sock = new WebSocket(`ws://127.0.0.1:${prefs.port}/`);
 
+  console.debug("websocket initalised");
+
   sock.onopen = (_e: Event) => {
+    console.debug("websocket opened");
     socket = sock;
     socketPending = false;
-    sendMessage({
-      type: "socketOpen",
-      data: null,
-    });
+
+    setSocketOpen();
   };
 
   sock.onclose = (_e: CloseEvent) => {
-    console.log("socket close");
+    console.debug("websocket closed");
     socket = null;
     socketPending = false;
-    sendMessage({
-      type: "socketClosed",
-      data: null,
-    });
+    setSocketClosed();
   };
 
   sock.onerror = (e: Event) => {
     console.error(`socket error: ${e}`);
     socket = null;
     socketPending = false;
-    sendMessage({
-      type: "socketClosed",
-      data: null,
-    });
+    setSocketClosed();
   };
 
   sock.onmessage = (e: MessageEvent) => {
-    console.log("received:", e.data);
+    console.debug("received:", e.data);
     getCount((len) => sendCount(len));
   };
+
+  console.debug("websocket configured");
 };

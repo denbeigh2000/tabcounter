@@ -1,14 +1,17 @@
-import { initHandlers, decrementCount, incrementCount, sendMessage } from "./events";
+import { initHandlers, decrementCount, incrementCount, setTabCount } from "./events";
 import { getCount } from "./lib";
 import { initSocketHandler } from "./socket";
 
 (async () => {
-  initHandlers();
-  await initSocketHandler();
+  browser.runtime.onInstalled.addListener(async () => {
+    console.debug("browser runtime initiated");
+    await initHandlers();
+    await initSocketHandler();
+    console.debug("websocket handler done");
+    getCount(setTabCount);
+    setInterval(() => getCount(setTabCount), 60000);
+  });
   browser.tabs.onCreated.addListener(incrementCount);
   browser.tabs.onRemoved.addListener(decrementCount);
-
-  setInterval(() => {
-    getCount((len) => sendMessage({ type: "setTabCount", data: { count: len } }));
-  }, 60000);
+  console.debug("added listeners");
 })();

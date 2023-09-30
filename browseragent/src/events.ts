@@ -1,20 +1,22 @@
 import { sendCount } from "./socket";
+import { deepmerge } from "deepmerge-ts";
+
 interface PrivateState {
   state: State,
   prefs: Preferences,
 }
 
-let state: PrivateState = {
-  state: {
-    openTabs: 0,
-    socketConnected: false,
-  },
-  prefs: {
-    // TODO: Persist these in localstorage or something?
-    port: 7212,
-    secret: "",
-  },
+const defaultState = {
+  openTabs: 0,
+  socketConnected: false,
 };
+
+const defaultPrefs = {
+  port: 7212,
+  secret: "",
+};
+
+let privateState: PrivateState;
 
 export interface Preferences {
   port: number,
@@ -78,6 +80,7 @@ export interface SocketOpenMessage extends BaseMessage {
 
 export interface SocketClosedMessage extends BaseMessage {
   type: "socketClosed",
+  data: null,
 }
 
 export type Message =
@@ -91,81 +94,90 @@ export type Message =
   | SocketOpenMessage
   | SocketClosedMessage;
 
-export async function sendMessage(msg: Message) {
-  return await browser.runtime.sendMessage(msg);
+export function getPrefs(): Preferences {
+  return { ...privateState.prefs };
 }
 
-export function initHandlers() {
-  browser.runtime.onMessage.addListener(async (message: Message) => {
+export function getState(): State {
+  return { ...privateState.state };
+}
+
+export function setSocketOpen() {
+  setSocketState(true);
+}
+
+export function setSocketClosed() {
+  setSocketState(false);
+}
+
+export async function initHandlers() {
+  const savedPrefs = await browser.storage.local.get("prefs") as Partial<Preferences>;
+  const initPrefs = savedPrefs ? deepmerge({}, defaultPrefs, savedPrefs) : { ...defaultPrefs };
+  setState(defaultState);
+  setPrefs(initPrefs);
+
+  browser.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
+    console.debug(`message listener: type ${message.type}`);
     switch (message.type) {
       case "requestPrefs":
-        return Object.assign({}, state.prefs);
+        setTimeout(() => sendResponse(browser.storage.local.get("prefs")));
+        return true;
       case "requestState":
-        return Object.assign({}, state.state);
+        setTimeout(() => sendResponse(browser.storage.local.get("state")));
+        return true;
       case "setPort":
         setPort(message.data.port);
         break;
       case "setSecret":
         setSecret(message.data.secret);
         break;
-      case "setTabCount":
-        setTabCount(message.data.count);
-        break;
-      case "socketOpen":
-        setSocketState(true);
-        break;
-      case "socketClosed":
-        setSocketState(false);
-        break;
-      case "prefsUpdated":
-      case "stateUpdated":
-        break;
       default:
         console.warn(`unhandled message: ${message}`)
     };
   });
+  console.debug("message listener attached");
+}
+
+function setState(update: Partial<State>) {
+  const state = deepmerge({}, privateState.state, update);
+  privateState = { state, ...privateState };
+  browser.runtime.sendMessage({
+    type: "stateUpdated",
+    data: { ...state },
+  });
+}
+
+function setPrefs(update: Partial<Preferences>) {
+  const prefs = deepmerge({}, privateState.prefs, update);
+  privateState = { prefs, ...privateState };
+  browser.runtime.sendMessage({
+    type: "prefsUpdated",
+    data: { ...prefs },
+  });
+  browser.storage.local.set({ prefs });
 }
 
 export function decrementCount() {
-  setTabCount(state.state.openTabs - 1);
+  setTabCount(privateState.state.openTabs - 1);
 }
 
 export function incrementCount() {
-  setTabCount(state.state.openTabs - 1);
+  setTabCount(privateState.state.openTabs - 1);
 }
 
 export function setTabCount(count: number) {
-  state.state.openTabs = count;
-  sendMessage({
-    type: "stateUpdated",
-    data: Object.assign({}, state.state),
-  });
+  setState({ openTabs: count });
   sendCount(count);
 }
 
-export function setSocketState(connected: boolean) {
-  state.state.socketConnected = connected;
-  sendMessage({
-    type: "stateUpdated",
-    data: Object.assign({}, state.state),
-  });
+function setSocketState(connected: boolean) {
+  setState({ socketConnected: connected });
 }
 
 export function setPort(port: number) {
-  // TODO: This needs to also make the main background loop
-  // disconnect/reconnect. Maybe the main loop should be primarily driven by
-  // the browser's message passing?
-  state.prefs.port = port;
-  sendMessage({
-    type: "prefsUpdated",
-    data: Object.assign({}, state.prefs),
-  });
+  setPrefs({ port });
 }
 
 export function setSecret(secret: string) {
-  state.prefs.secret = secret;
-  sendMessage({
-    type: "prefsUpdated",
-    data: Object.assign({}, state.prefs),
-  });
+  setPrefs({ secret });
 }
