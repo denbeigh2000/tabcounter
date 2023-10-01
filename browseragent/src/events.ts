@@ -109,7 +109,7 @@ export function setSocketClosed() {
 
 export async function initHandlers() {
   console.debug("fetching preferences");
-  const savedPrefs = await browser.storage.local.get("prefs") as Partial<Preferences>;
+  const savedPrefs = (await browser.storage.local.get("prefs")).prefs as Partial<Preferences>;
   console.debug("preferences:", savedPrefs);
   const initPrefs = savedPrefs ? deepmerge({}, defaultPrefs, savedPrefs) : { ...defaultPrefs };
   setState(defaultState);
@@ -119,10 +119,10 @@ export async function initHandlers() {
     console.debug(`message listener: type ${message.type}`);
     switch (message.type) {
       case "requestPrefs":
-        setTimeout(() => sendResponse(browser.storage.local.get("prefs")));
+        setTimeout(() => sendResponse(privateState.prefs));
         return true;
       case "requestState":
-        setTimeout(() => sendResponse(browser.storage.local.get("state")));
+        setTimeout(() => sendResponse(privateState.state));
         return true;
       case "setPrefs":
         setPrefs(message.data);

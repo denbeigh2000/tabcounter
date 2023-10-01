@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "dev": "./node_modules/.bin/rollup --config ./rollup.config.mjs --bundleConfigAsCjs --file ./src/background.js ./src/background.ts",
+    "background": "./node_modules/.bin/rollup --config ./rollup.config.mjs --bundleConfigAsCjs --file ./src/background.js ./src/background.ts",
+    "options": "./node_modules/.bin/rollup --config ./rollup.config.mjs --bundleConfigAsCjs --file ./src/options.js ./src/options.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

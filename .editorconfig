@@ -10,5 +10,8 @@ indent_size = 2
 [*.{mjs,js,ts}]
 indent_size = 2
 
+[*.html]
+indent_size = 2
+
 [*.nix]
 indent_size = 2
