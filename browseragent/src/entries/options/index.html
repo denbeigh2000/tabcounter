@@ -6,13 +6,24 @@
   </head>
 
   <body>
-    <form>
-      <label for="port">Application port</label>
-      <input type="number" id="port" name="port" />
-      <label for="secret">Pre-shared secrets</label>
-      <input type="text" id="secret" name="secret" />
-      <button type="submit">Save</button>
-    </form>
+    <div id="loading-screen">
+      Loading...
+    </div>
+    <div id="content" hidden="true" style="display: none">
+      <form id="input-form">
+        <label for="port">Application port</label>
+        <input type="number" id="port" name="port" />
+        <br />
+        <label for="secret">Pre-shared secret</label>
+        <input type="password" id="secret" name="secret" />
+        <br />
+        <button type="submit">Save</button>
+      </form>
+
+      <p>
+        Socket is currently <span id="connected-status">connected</span>
+      </p>
+    </div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>
