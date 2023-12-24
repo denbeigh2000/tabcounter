@@ -3,7 +3,7 @@ import { getCount } from "./lib";
 
 let retrierWorking = true;
 let socketPending = false;
-let conn: Connection;
+let conn: Connection | null;
 
 class Connection {
   socket: WebSocket

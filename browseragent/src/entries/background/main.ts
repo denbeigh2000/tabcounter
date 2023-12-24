@@ -1,6 +1,8 @@
-import { initHandlers, decrementCount, incrementCount, setTabCount, getPrefs } from "./events";
-import { getCount } from "./lib";
-import { initSocketHandler } from "./socket";
+import browser from "webextension-polyfill";
+
+import { initHandlers, decrementCount, incrementCount, setTabCount, getPrefs } from "@tabcounter/lib/events";
+import { getCount } from "@tabcounter/lib/lib";
+import { initSocketHandler } from "@tabcounter/lib/socket";
 
 browser.runtime.onInstalled.addListener(async () => {
   console.debug("browser runtime initiated");
@@ -11,6 +13,9 @@ browser.runtime.onInstalled.addListener(async () => {
   getCount(setTabCount);
   setInterval(() => getCount(setTabCount), 60000);
 });
+
 browser.tabs.onCreated.addListener(incrementCount);
+
 browser.tabs.onRemoved.addListener(decrementCount);
+
 console.debug("added listeners");

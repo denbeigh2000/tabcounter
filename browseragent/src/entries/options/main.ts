@@ -1,4 +1,4 @@
-import { Message, Preferences, RequestPrefsMessage, SetPrefsMessage } from "./events";
+import { Message, Preferences, RequestPrefsMessage, SetPrefsMessage } from "@tabcounter/lib/events";
 
 (async () => {
   const form = document.forms[0];
@@ -46,8 +46,15 @@ import { Message, Preferences, RequestPrefsMessage, SetPrefsMessage } from "./ev
     console.debug("running submit callback");
     event.preventDefault();
     const data = new FormData(form);
-    const port = parseInt(data.get("port").valueOf().toString());
-    const secret = data.get("secret").valueOf() as string;
+    const rawPort = data.get("port");
+    const rawSecret = data.get("secret");
+    if (!rawPort || !rawSecret) {
+      console.log("missing port/secret. port:", rawPort, "secret:", rawSecret);
+      return;
+    }
+
+    const port = parseInt(rawPort.valueOf().toString());
+    const secret = rawSecret.valueOf().toString();
 
     const msg: SetPrefsMessage = { type: "setPrefs", data: { secret, port } };
     browser.runtime.sendMessage(msg);

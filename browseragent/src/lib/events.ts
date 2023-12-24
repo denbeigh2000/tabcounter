@@ -1,4 +1,6 @@
+// TODO: fix circular dependency
 import { reconnectIfNecessary, sendCount } from "./socket";
+
 import { deepmerge } from "deepmerge-ts";
 
 interface PrivateState {
@@ -126,10 +128,12 @@ export async function initHandlers() {
         return true;
       case "setPrefs":
         setPrefs(message.data);
+        // TODO: send something?
         break;
       default:
         console.warn(`unhandled message: ${message}`)
     };
+    return false;
   });
   console.debug("message listener attached");
 }

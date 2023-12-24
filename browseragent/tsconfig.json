@@ -1,16 +1,23 @@
 {
   "compilerOptions": {
-    "module": "esnext",
-    "noImplicitAny": true,
-    "removeComments": true,
-    "preserveConstEnums": true,
-    "sourceMap": false,
-    "lib": [ "es2015" ]
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "@tabcounter/*": ["src/*"]
+    },
+    "target": "ESNext",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "lib": ["ESNext", "DOM"],
+    "moduleResolution": "Node",
+    "strict": true,
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true
   },
-  "include": [
-    "src/**/*.ts"
-  ],
-  "typeRoots": [
-    "node_modules/@types"
-  ]
+  "include": ["src"]
 }
