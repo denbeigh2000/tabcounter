@@ -27,7 +27,7 @@ in
     cp -r ${deps}/node_modules ./node_modules
     cp -r ${./package.json} ./package.json
     cp -r ${./src} ./src
-    cp -r ${./vite.config.ts} ./vite.config.ts
+    cp -r ${./vite.config.mts} ./vite.config.mts
     cp -r ${./tsconfig.json} ./tsconfig.json
 
     ls -l src/manifest.ts
