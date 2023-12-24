@@ -85,8 +85,12 @@ const hide = (el: HTMLElement) => {
     const data = new FormData(form);
     const rawPort = data.get("port");
     const rawSecret = data.get("secret");
-    if (!rawPort || !rawSecret) {
-      console.log("missing port/secret. port:", rawPort, "secret:", rawSecret);
+
+    if (!rawPort) {
+      console.error("missing port");
+      return;
+    } else if (!rawSecret) {
+      console.error("missing secret");
       return;
     }
 
