@@ -1,7 +1,6 @@
 // TODO: fix circular dependency
-import { reconnectIfNecessary, sendCount } from "./socket";
-
 import { deepmerge } from "deepmerge-ts";
+import { setPrefs, setState } from "./state";
 
 interface PrivateState {
   state: State,
@@ -101,14 +100,6 @@ export function getState(): State {
   return { ...privateState.state };
 }
 
-export function setSocketOpen() {
-  setSocketState(true);
-}
-
-export function setSocketClosed() {
-  setSocketState(false);
-}
-
 export async function initHandlers() {
   console.debug("fetching preferences");
   const savedPrefs = (await browser.storage.local.get("prefs")).prefs as Partial<Preferences>;
@@ -136,56 +127,4 @@ export async function initHandlers() {
     return false;
   });
   console.debug("message listener attached");
-}
-
-function setState(update: Partial<State>) {
-  const state = deepmerge({}, privateState.state, update) as State;
-  privateState.state = state;
-  browser.runtime.sendMessage({
-    type: "stateUpdated",
-    data: { ...state },
-  })
-    .catch(e => console.warn(`sending message failed: ${e}`));
-}
-
-function setPrefs(update: Partial<Preferences>) {
-  const prefs = deepmerge({}, privateState.prefs, update) as Preferences;
-  privateState.prefs = prefs;
-  console.debug("set privateState:", privateState);
-  browser.runtime.sendMessage({
-    type: "prefsUpdated",
-    data: { ...prefs },
-  })
-    .catch(e => console.warn(`sending message failed: ${e}`));
-  browser.storage.local.set({ prefs });
-  console.debug("kicked off browser storage write");
-
-  reconnectIfNecessary(prefs);
-}
-
-export const decrementCount = () => {
-  const state = getState();
-  setTabCount(state.openTabs - 1);
-}
-
-export const incrementCount = () => {
-  const state = getState();
-  setTabCount(state.openTabs + 1);
-}
-
-export function setTabCount(count: number) {
-  setState({ openTabs: count });
-  sendCount(count);
-}
-
-function setSocketState(connected: boolean) {
-  setState({ socketConnected: connected });
-}
-
-export function setPort(port: number) {
-  setPrefs({ port });
-}
-
-export function setSecret(secret: string) {
-  setPrefs({ secret });
 }

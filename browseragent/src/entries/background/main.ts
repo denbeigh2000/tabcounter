@@ -1,6 +1,7 @@
 import browser from "webextension-polyfill";
 
-import { initHandlers, decrementCount, incrementCount, setTabCount, getPrefs } from "@tabcounter/lib/events";
+import { decrementCount, incrementCount, setTabCount } from "@tabcounter/lib/state";
+import { initHandlers, getPrefs } from "@tabcounter/lib/events";
 import { getCount } from "@tabcounter/lib/lib";
 import { initSocketHandler } from "@tabcounter/lib/socket";
 

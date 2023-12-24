@@ -1,4 +1,5 @@
-import { Message, getPrefs, setSocketClosed, setSocketOpen } from "./events";
+import { Message, getPrefs } from "./events";
+import { setSocketClosed, setSocketOpen } from "./state";
 import { getCount } from "./lib";
 
 let retrierWorking = true;

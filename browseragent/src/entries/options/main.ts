@@ -1,6 +1,5 @@
 import { Message, Preferences, RequestPrefsMessage, RequestStateMessage, SetPrefsMessage, State } from "@tabcounter/lib/events";
 
-
 const connected = {
   str: "connected",
   color: "green",
