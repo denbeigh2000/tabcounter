@@ -22,24 +22,18 @@ let
     };
 in
 
-rec {
-  compiledJs = runCommand "browseragent-background.js" { } ''
-    ln -s ${deps}/node_modules ./node_modules
-    ln -s ${tsConfig} tsconfig.json
-    ln -s ${./src} ./src
-
-    ls -l
-
-    NODE_PATH="${deps}/node_modules" ./node_modules/.bin/rollup \
-    --config ${./rollup.config.mjs} \
-    --bundleConfigAsCjs \
-    --file $out \
-    ./src/background.ts
-  '';
-
+{
   builtDirectory = runCommand "browseragent" { } ''
-    mkdir $out
-    cp ${./src/manifest.json} $out/manifest.json
-    cp ${compiledJs} $out/background.js
+    cp -r ${deps}/node_modules ./node_modules
+    cp -r ${./package.json} ./package.json
+    cp -r ${./src} ./src
+    cp -r ${./vite.config.ts} ./vite.config.ts
+    cp -r ${./tsconfig.json} ./tsconfig.json
+
+    ls -l src/manifest.ts
+
+    ./node_modules/.bin/tsc -p ./tsconfig.json
+    ./node_modules/.bin/vite build
+    mv ./dist $out
   '';
 }
