@@ -2,9 +2,107 @@ import { Message, getPrefs } from "./events";
 import { setSocketClosed, setSocketOpen } from "./state";
 import { getCount } from "./lib";
 
-let retrierWorking = true;
-let socketPending = false;
-let conn: Connection | null;
+import browser from "webextension-polyfill";
+
+/*
+ * TODO: Make this more of an official "global state"
+ */
+
+const defaultWaitSecs = 1;
+// TODO: Move this to preferences
+const maxWaitSecs = 30;
+
+interface PrivateState {
+  state: "active" | "disconnected" | "pending",
+  activeConnection: Connection | null,
+  activeRetrier: Retrier | null,
+}
+
+const privateState: PrivateState = {
+  state: "disconnected",
+  activeConnection: null,
+  activeRetrier: null,
+}
+
+interface RetrierParams {
+  port: number,
+  secret: string,
+
+  maxWaitSecs: number,
+
+  onStop: () => void,
+  shouldTry: () => boolean,
+  shouldAbort: () => boolean,
+}
+
+class Retrier {
+  waitSecs: number;
+  maxWaitSecs: number;
+  intervalID: number | null;
+
+  onStop: () => void;
+  shouldRetry: () => boolean;
+  shouldAbort: () => boolean;
+
+  port: number;
+  secret: string;
+
+  constructor(params: RetrierParams) {
+    this.waitSecs = defaultWaitSecs;
+    this.maxWaitSecs = maxWaitSecs;
+
+    this.onStop = params.onStop;
+    this.shouldRetry = params.shouldTry;
+    this.shouldAbort = params.shouldAbort;
+
+    this.port = params.port;
+    this.secret = params.secret;
+
+    this.intervalID = null;
+  }
+
+  public started(): boolean {
+    return this.intervalID !== null;
+  }
+
+  public start() {
+    if (this.started()) {
+      console.error("retrier already working");
+      return;
+    }
+
+    this.intervalID = window.setInterval(() => this.run(), this.waitSecs * 1000);
+  }
+
+  public stop() {
+    this.waitSecs = defaultWaitSecs;
+    if (this.started()) {
+      return;
+    }
+
+    window.clearInterval(this.intervalID!);
+    this.intervalID = null;
+    this.onStop();
+  }
+
+  private run() {
+    if (this.shouldAbort()) {
+      this.stop();
+      return;
+    }
+
+    if (!this.shouldRetry()) {
+      return;
+    }
+
+    const open = (c: Connection) => {
+      this.stop();
+      window.setTimeout(() => onOpen(c));
+    };
+
+    new Connection(this.port, this.secret, open, onClose, onError, onMessage);
+  }
+}
 
 class Connection {
   socket: WebSocket
@@ -14,7 +112,7 @@ class Connection {
   constructor(
     port: number,
     secret: string,
-    onOpen: () => void,
+    onOpen: (conn: Connection) => void,
     onClose: () => void,
     onError: () => void,
     onMessage: (e: MessageEvent) => void,
@@ -27,7 +125,7 @@ class Connection {
 
     this.socket.onopen = (_e: Event) => {
       console.debug("websocket opened");
-      onOpen();
+      onOpen(this);
     };
 
     this.socket.onclose = (_e: CloseEvent) => {
@@ -72,13 +170,13 @@ export const payload = (count: number): Payload => {
 };
 
 export const sendCount = (count: number) => {
-  if (!conn) {
+  if (!privateState.activeConnection) {
     console.warn("no socket!");
     return;
   }
 
   const msg = JSON.stringify(payload(count));
-  conn.send(msg);
+  privateState.activeConnection.send(msg);
 };
 
 export const socketHandler = async (message: Message) => {
@@ -93,72 +191,41 @@ export const socketHandler = async (message: Message) => {
     return;
   }
 
-  if (!retrierWorking) {
-    retrierWorking = true;
-    await restartSocket();
-    retrierWorking = false;
+  if (privateState.activeRetrier) {
+    startRetrierIfNecessary();
   }
 };
 
-export const reconnectIfNecessary = async (params: Params) => {
-  if (socketPending) {
-    console.debug("socket pending, returning");
-    return;
+const startRetrierIfNecessary = () => {
+  const { port, secret } = getPrefs();
+  if (!privateState.activeRetrier) {
+    const onStop = () => privateState.activeRetrier = null;
+    const shouldTry = () => privateState.state !== "active";
+    const shouldAbort = () => privateState.state === "active";
+    // NOTE: may want subtly different behaviour for state === "pending" vs.
+    // "disconnected"
+    privateState.activeRetrier = new Retrier({
+      port,
+      secret,
+      maxWaitSecs,
+      onStop,
+      shouldTry,
+      shouldAbort,
+    });
+    privateState.activeRetrier.start();
   }
-
-  if (conn && (conn.port === params.port && conn.secret === params.secret)) {
-    console.debug("Not reconnecting, same params");
-    return;
-  }
-  const socketFut = initSocketHandler(params);
-
-  if (conn) {
-    console.debug("killing existing connection");
-
-    conn.close();
-    conn = null;
-  }
-
-  await socketFut;
-};
-
-const restartSocket = async () => {
-  return await new Promise(resolve => {
-    // Attempt to restart a socket every 2 seconds
-    const interval = setInterval(() => {
-      // A socket is currently trying to connect. Don't try to start another,
-      // which may get us into fighting callback hell.
-      if (socketPending) {
-        return;
-      }
-
-      // A previously-launched socket was successful. Huzzah!
-      if (conn) {
-        resolve(null);
-        clearInterval(interval);
-
-        return;
-      };
-
-      // A connection attempt hasn't been started/a previous one has failed.
-      // Launch off a new asynchronous worker, and kick off another one in 2
-      // seconds if this one failed.
-      const prefs = getPrefs();
-      initSocketHandler(prefs);
-    }, 2000);
-  });
-};
+}
 
 const onClose = () => {
-  conn = null;
-  socketPending = false;
+  privateState.state = "disconnected";
   setSocketClosed();
+  startRetrierIfNecessary();
 };
 
 const onError = () => {
-  conn = null;
-  socketPending = false;
-  setSocketClosed();
+  // TODO: what error can we actually take here?
+  console.error("websocket error occurred");
+  onClose();
 };
 
 const onMessage = (e: MessageEvent) => {
@@ -166,16 +233,59 @@ const onMessage = (e: MessageEvent) => {
   getCount((len) => sendCount(len));
 };
 
-export const initSocketHandler = async (prefs: Params) => {
-  if (socketPending) {
+const onOpen = (newConn: Connection) => {
+  if (privateState.activeRetrier) {
+    privateState.activeRetrier.stop();
+  }
+  // Potentially redundant, but helpful if the Retrier ends up spawning
+  // competing connections.
+  privateState.activeConnection = newConn;
+  privateState.state = "active";
+  setSocketOpen();
+};
+
+const onBrowserMessage = (message: Message) => {
+  if (message.type !== "prefsUpdated") {
     return;
   }
 
-  socketPending = true;
-  const newConn = new Connection(prefs.port, prefs.secret, () => {
-    conn = newConn;
-    socketPending = false;
+  const { port, secret } = message.data;
+  const { activeConnection, activeRetrier } = privateState;
+  const connCurrent = (activeConnection && activeConnection.port === port && activeConnection.secret === secret);
+  if (connCurrent) {
+    // Abort if we have an existing socket, either pending or active,
+    // with the same secret and port.
+    return;
+  }
 
-    setSocketOpen();
-  }, onClose, onError, onMessage);
+  if (activeRetrier) {
+    if (activeRetrier.port === port && activeRetrier.secret === secret) {
+      // We already have a retrier trying to connect to this port
+      return;
+    }
+
+    activeRetrier.stop();
+  }
+
+  if (activeConnection) {
+    activeConnection.close();
+    privateState.activeConnection = null;
+  }
+
+  privateState.activeConnection = new Connection(port, secret, onOpen, onClose, onError, onMessage);
+}
+
+export const initSocketHandler = async (prefs: Params) => {
+  if (privateState.state !== "disconnected") {
+    return;
+  }
+
+  if (privateState.activeConnection !== null) {
+    throw "assertion error: state disconnected and connection non-null";
+  }
+
+  privateState.state = "pending";
+  privateState.activeConnection = new Connection(prefs.port, prefs.secret, onOpen, onClose, onError, onMessage);
+  // Ensure we react to changes in socket preferences
+  browser.runtime.onMessage.addListener(onBrowserMessage);
 };
